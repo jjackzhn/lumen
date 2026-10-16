@@ -32,6 +32,13 @@ EOF
 
 die() { echo "lumen.sh: $*" >&2; exit 1; }
 
+# Strips control characters so text from the server (or a bad URL) cannot
+# send terminal escape sequences to the user's terminal.
+sanitize() { printf '%s' "$1" | tr -d '\000-\037\177'; }
+
+# One rule for every key source: login response, keys.json, LUMEN_API_KEY.
+KEY_RE='^sk_[A-Za-z0-9_-]+$'
+
 DEFAULT_SERVER="https://lumen.ncsa.illinois.edu"
 SERVER="${LUMEN_BASE_URL:-$DEFAULT_SERVER}"
 KEYNAME="opencode"
@@ -62,10 +69,14 @@ command -v jq >/dev/null 2>&1 || die "jq is required"
 
 # Only https, except plain http for loopback development servers. Reject
 # path traversal: a base URL with .. or empty segments would corrupt the
-# endpoints and keys.json host keys built from it.
+# endpoints and keys.json host keys built from it. The character whitelist
+# keeps anything but a plain host[:port] and path out of the URLs and the
+# rc block built from it.
+SERVER_RE='^https?://[][A-Za-z0-9.:-]+(/[A-Za-z0-9._~/-]*)?$'
 validate_server() {
-  local url="$1" scheme hostpath hostport host
-  [[ "$url" == *"://"* ]] || die "invalid server URL: $url"
+  local url="$1" scheme hostpath hostport host shown
+  shown=$(sanitize "$url")
+  [[ "$url" == *"://"* ]] || die "invalid server URL: $shown"
   scheme="${url%%://*}"
   hostpath="${url#*://}"
   hostport="${hostpath%%/*}"
@@ -76,15 +87,16 @@ validate_server() {
       host="${hostport%:*}"
       case "$host" in
         localhost|127.0.0.1|\[::1\]|::1) : ;;
-        *) die "refusing plain http for non-local server: $url (use https)" ;;
+        *) die "refusing plain http for non-local server: $shown (use https)" ;;
       esac
       ;;
-    *) die "unsupported URL scheme in: $url" ;;
+    *) die "unsupported URL scheme in: $shown" ;;
   esac
-  [[ -n "$hostport" ]] || die "invalid server URL: $url"
-  [[ "$path" != *".."* ]] || die "server URL path must not contain '..': $url"
+  [[ -n "$hostport" ]] || die "invalid server URL: $shown"
+  [[ "$url" =~ $SERVER_RE ]] || die "invalid characters in server URL: $shown"
+  [[ "$path" != *".."* ]] || die "server URL path must not contain '..': $shown"
   if [[ "${path%/}" == *//* ]]; then
-    die "server URL path must not contain empty segments: $url"
+    die "server URL path must not contain empty segments: $shown"
   fi
 }
 validate_server "$SERVER"
@@ -204,10 +216,18 @@ install_rc_key() {
 
 # Prints $1 if it is a plain positive integer, else the default $2. Server
 # values reach $(( )), which would evaluate expressions (and command
-# substitutions in array subscripts) hidden in them.
+# substitutions in array subscripts) hidden in them. An optional $3 caps the
+# result, so the server cannot make the client wait arbitrarily long.
 positive_int() {
-  if [[ "$1" =~ ^[1-9][0-9]{0,8}$ ]]; then printf '%s' "$1"; else printf '%s' "$2"; fi
+  local v="$2"
+  [[ "$1" =~ ^[1-9][0-9]{0,8}$ ]] && v="$1"
+  if [[ -n "${3:-}" ]] && (( v > $3 )); then v="$3"; fi
+  printf '%s' "$v"
 }
+
+MAX_INTERVAL=60
+MAX_EXPIRES_IN=1800
+MAX_RETRY_AFTER=60
 
 device_login() {
   local interval expires_in deadline approved_by
@@ -216,18 +236,18 @@ device_login() {
     die "cannot reach $SERVER"
   fi
   if [[ "$RESP_CODE" != "200" ]]; then
-    die "login request rejected ($RESP_CODE): $(jq -r '.error_description // .error // "unknown error"' <<<"$RESP_BODY" 2>/dev/null || echo "$RESP_BODY")"
+    die "login request rejected ($RESP_CODE): $(sanitize "$(jq -r '.error_description // .error // "unknown error"' <<<"$RESP_BODY" 2>/dev/null || echo "$RESP_BODY")")"
   fi
   local device_code user_code
   device_code=$(jq -r .device_code <<<"$RESP_BODY")
-  user_code=$(jq -r .user_code <<<"$RESP_BODY")
-  interval=$(positive_int "$(jq -r '.interval // 5' <<<"$RESP_BODY")" 5)
-  expires_in=$(positive_int "$(jq -r '.expires_in // 600' <<<"$RESP_BODY")" 600)
+  user_code=$(sanitize "$(jq -r .user_code <<<"$RESP_BODY")")
+  interval=$(positive_int "$(jq -r '.interval // 5' <<<"$RESP_BODY")" 5 "$MAX_INTERVAL")
+  expires_in=$(positive_int "$(jq -r '.expires_in // 600' <<<"$RESP_BODY")" 600 "$MAX_EXPIRES_IN")
   echo "To authorize '$KEYNAME' for $CLIENT_ID:"
-  echo "  1. open $(jq -r .verification_uri <<<"$RESP_BODY")"
+  echo "  1. open $(sanitize "$(jq -r .verification_uri <<<"$RESP_BODY")")"
   echo "  2. enter code $user_code"
   local vfull
-  vfull=$(jq -r '.verification_uri_complete // empty' <<<"$RESP_BODY")
+  vfull=$(sanitize "$(jq -r '.verification_uri_complete // empty' <<<"$RESP_BODY")")
   # Only open links on the server itself, never another scheme or host.
   if [[ "$vfull" == "$SERVER/"* ]]; then
     if command -v open >/dev/null 2>&1; then open "$vfull" >/dev/null 2>&1 || true
@@ -246,8 +266,8 @@ device_login() {
     if [[ "$RESP_CODE" == "200" ]]; then
       local key
       key=$(jq -r '.access_token // empty' <<<"$RESP_BODY")
-      [[ "$key" =~ ^sk_[A-Za-z0-9_-]+$ ]] || die "unexpected token response"
-      approved_by=$(jq -r '.approved_by // "an account"' <<<"$RESP_BODY")
+      [[ "$key" =~ $KEY_RE ]] || die "unexpected token response"
+      approved_by=$(sanitize "$(jq -r '.approved_by // "an account"' <<<"$RESP_BODY")")
       echo "Approved by $approved_by."
       store_key "$key"
       export LUMEN_API_KEY="$key"
@@ -257,7 +277,11 @@ device_login() {
     error=$(jq -r '.error // empty' <<<"$RESP_BODY" 2>/dev/null || true)
     case "$error" in
       authorization_pending) sleep 0 ;;
-      slow_down) interval=$((interval + 5)); sleep "$interval" ;;
+      slow_down)
+        interval=$((interval + 5))
+        (( interval > MAX_INTERVAL )) && interval=$MAX_INTERVAL
+        sleep "$interval"
+        ;;
       access_denied) die "authorization denied" ;;
       expired_token) die "authorization expired" ;;
       invalid_grant) die "authorization request is no longer valid" ;;
@@ -265,7 +289,7 @@ device_login() {
         if [[ "$RESP_CODE" == "429" ]]; then
           local ra
           ra=$(awk 'tolower($1)=="retry-after:"{gsub(/\r/,"",$2); print $2}' "$TMPDIR_LUMEN/post_headers" 2>/dev/null || true)
-          sleep "${ra:-$((interval + 5))}"
+          sleep "$(positive_int "$ra" $((interval + 5)) "$MAX_RETRY_AFTER")"
         else
           sleep "$interval"
         fi
@@ -283,15 +307,19 @@ resolve_key() {
   local want="${LUMEN_BASE_URL:-$DEFAULT_SERVER}"
   if [[ $RELOGIN -eq 0 && -n "${LUMEN_API_KEY:-}" \
         && "${want%/}" == "$SERVER" ]]; then
-    return 0
+    if [[ "$LUMEN_API_KEY" =~ $KEY_RE ]]; then
+      return 0
+    fi
+    echo "warning: ignoring malformed LUMEN_API_KEY (unset it or run lumen.sh --relogin)" >&2
   fi
   if [[ $RELOGIN -eq 0 && -f "$KEYS_JSON" ]]; then
     local k
     k=$(jq -r --arg h "$HOST" '.[$h] // empty' "$KEYS_JSON" 2>/dev/null || true)
-    if [[ -n "$k" ]]; then
+    if [[ "$k" =~ $KEY_RE ]]; then
       export LUMEN_API_KEY="$k"
       return 0
     fi
+    [[ -z "$k" ]] || echo "warning: ignoring malformed key for $HOST in $KEYS_JSON (run lumen.sh --relogin to replace it)" >&2
   fi
   device_login
 }
