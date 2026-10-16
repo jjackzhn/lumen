@@ -1,12 +1,13 @@
 [project]
 name = "lumen"
-version = "2.2.0"
+version = "2.2.1"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 dependencies = [
     "flask>=3.0",
     "flask-sqlalchemy>=3.1",
+    "sqlalchemy>=2.0,<2.1",
     "flask-migrate>=4.0",
     "openai>=3",
     "python-dotenv>=1.0",

@@ -74,7 +74,15 @@ Following rules are here to help the AI avoid the same mistakes again:
 - Keep CHANGELOG entries short: one terse bullet per logical change, present tense, user-facing language. Do not write long narrative paragraphs explaining the "why" at length. Where a change has an obvious PR, link it (e.g. `(#123)`), or an issue in GitHub.
 - When bumping the version in pyproject.toml, also run `uv lock` to update uv.lock.
 - When bumping the version for a release, also update `version` and `appVersion` in chart/Chart.yaml to match.
-- When cutting a release, first pull the latest dependencies (`uv lock --upgrade`) and then run the full test suite (`uv run pytest`) before tagging — upgraded dependencies can introduce breaking changes, so the release must not go out unless the tests pass.
+- When cutting a release, first pull the latest dependencies (`uv lock --upgrade`) and then run the full test suite before tagging — upgraded dependencies can introduce breaking changes, so the release must not go out unless the tests pass.
+- "The full test suite" always includes the PostgreSQL and Redis tests; a plain `uv run pytest` silently skips them. Start throwaway services and point the suite at them:
+  ```bash
+  docker run -d --rm --name lumen-test-pg -e POSTGRES_USER=lumen -e POSTGRES_PASSWORD=lumen -e POSTGRES_DB=lumen_ci -p 55433:5432 timescale/timescaledb:2.27.2-pg17
+  docker run -d --rm --name lumen-test-redis -p 56380:6379 redis:7
+  LUMEN_TEST_POSTGRES_URL=postgresql://lumen:lumen@localhost:55433/lumen_ci LUMEN_TEST_REDIS_URL=redis://localhost:56380/0 uv run pytest -rs
+  docker stop lumen-test-pg lumen-test-redis
+  ```
+  Check the `-rs` skip summary: no test may be skipped for a missing `LUMEN_TEST_POSTGRES_URL` or `LUMEN_TEST_REDIS_URL`.
 - When uploading the changelog for a release, add Contributors at the bottom as a list with a link to their github profile, icon and name.
 - For local testing without OAuth or a real LLM: set `app.dev_user` in config.yaml and use `uv run dummy` (dummy backend on port 9999). See the "Local Development" section in README.md.
 - Keep the help docs in `docs/` up to date: any change to a user-facing screen (chat, profile, usage, models, model detail, projects, admin) must be reflected in the matching page under `docs/guides/`, `docs/models/`, `docs/projects/`, or `docs/admin/`, including re-capturing affected screenshots (see next rule). Schema changes go in `docs/dbschema.md` (see below).

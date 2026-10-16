@@ -4,6 +4,12 @@ All notable changes to Lumen will be documented in this file.
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-10-16
+
+### Fixed
+
+- Pin SQLAlchemy below 2.1, which defaults `postgresql://` URLs to psycopg 3 instead of the installed psycopg2.
+
 ## [2.2.0] - 2026-10-15
 
 **Upgrade warning:** Back up the database first. The migrations drop `api_keys.active` (replaced by `revoked_at`), `entity_managers.is_owner` (replaced by `entities.owner_entity_id`) and the `model_group_access` table, so older versions cannot run against the new schema: stop every replica before starting this version; a rolling update is not supported. The upgrade stops if any project has no owner and lists their IDs; give every project an owner (Change Owner on the project page) before upgrading. Downgrading does not restore group model grants or project user memberships; restore the backup instead.

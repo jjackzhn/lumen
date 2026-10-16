@@ -38,6 +38,16 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
+      # The Redis live-state tests skip when this is absent.
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@v6
@@ -57,6 +67,7 @@ jobs:
         run: uv run pytest --junitxml=junit.xml
         env:
           LUMEN_TEST_POSTGRES_URL: postgresql://lumen:lumen@localhost:5432/lumen_ci
+          LUMEN_TEST_REDIS_URL: redis://localhost:6379/0
 
       - name: Publish test results
         uses: dorny/test-reporter@v3
