@@ -4,6 +4,8 @@ All notable changes to Lumen will be documented in this file.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-15
+
 **Upgrade warning:** Back up the database first. The migrations drop `api_keys.active` (replaced by `revoked_at`), `entity_managers.is_owner` (replaced by `entities.owner_entity_id`) and the `model_group_access` table, so older versions cannot run against the new schema: stop every replica before starting this version; a rolling update is not supported. The upgrade stops if any project has no owner and lists their IDs; give every project an owner (Change Owner on the project page) before upgrading. Downgrading does not restore group model grants or project user memberships; restore the backup instead.
 
 **Breaking:** API requests always require model acknowledgment and `api.consent` has been removed. Remove it from config.yaml (Lumen refuses to start) and from Helm values (the chart schema rejects it). Have users acknowledge models before upgrading. (#48)
@@ -41,6 +43,7 @@ All notable changes to Lumen will be documented in this file.
 - Remove usage stats from group pages. ([#116](https://github.com/ncsa/lumen/pull/116))
 - API keys are revoked instead of deleted: Revoke replaces Delete on the profile and project pages, keeps the key's usage history and records when and by whom it was revoked.
 - Model Update no longer overwrites prices from models.dev unless the model sets `auto_price: true` (config file or the Automatic price checkbox in the config editor). ([#115](https://github.com/ncsa/lumen/pull/115), [#117](https://github.com/ncsa/lumen/pull/117))
+- Update application dependencies.
 
 ### Removed
 
