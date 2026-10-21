@@ -136,6 +136,14 @@ def seeded(pg_migrated):
     racing an hour boundary.
     """
     with pg_migrated.begin() as conn:
+        # request_metrics_1m keeps 30 days (#169) and the oldest history row is
+        # 40 days old. Pause that policy so its job cannot drop the row's bucket
+        # partway through the module, depending on when it happens to fire. The
+        # pause is never undone: this database is private to the module.
+        conn.execute(text(
+            "SELECT alter_job(job_id, scheduled => false) FROM timescaledb_information.jobs "
+            "WHERE proc_name = 'policy_retention'"
+        ))
         for row in _HISTORY:
             params = {k: v for k, v in row.items() if k != "age"}
             conn.execute(text(_INSERT.replace(":time", f"now() - INTERVAL '{row['age']}'")), params)
@@ -380,15 +388,17 @@ def test_add_column_still_works_on_a_compressed_hypertable(pg_migrated):
         conn.execute(text("ALTER TABLE request_logs DROP COLUMN phase8_probe"))
 
 
-def test_no_retention_policy_is_created_by_any_migration(pg_migrated):
+def test_the_only_retention_policy_is_on_request_metrics_1m(pg_migrated):
     """Deliberate. `entrypoint.sh` runs `flask db upgrade` at container start,
-    so a migration that added retention would start deleting production data on
-    the next deploy and make the phase's dry-run gate unenforceable."""
+    so a migration that added retention to `request_logs` would start deleting
+    production data on the next deploy. The one policy any migration adds keeps
+    30 days of the minute aggregate (#169)."""
     with pg_migrated.connect() as conn:
         jobs = conn.execute(text(
-            "SELECT job_id FROM timescaledb_information.jobs WHERE proc_name = 'policy_retention'"
+            "SELECT hypertable_name FROM timescaledb_information.jobs "
+            "WHERE proc_name = 'policy_retention'"
         )).scalars().all()
-    assert jobs == [], f"a migration created a retention policy: {jobs}"
+    assert jobs == ["request_metrics_1m"], f"unexpected retention policies: {jobs}"
 
 
 def test_downgrade_and_upgrade_round_trip(pg_url, pg_migrated, seeded):

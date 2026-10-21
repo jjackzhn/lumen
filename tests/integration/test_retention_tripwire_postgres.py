@@ -80,7 +80,7 @@ def test_retention_policy_on_request_logs_logs_an_error(pg_engine, create_pg_app
     assert "flask check-aggregate" in msg
 
 
-def test_no_retention_policy_logs_nothing_with_one_query(pg_engine, create_pg_app, caplog):
+def test_no_request_logs_retention_policy_logs_nothing_with_one_query(pg_engine, create_pg_app, caplog):
     statements = []
 
     def record(conn, cursor, statement, parameters, context, executemany):
@@ -95,6 +95,20 @@ def test_no_retention_policy_logs_nothing_with_one_query(pg_engine, create_pg_ap
 
     assert _logged(caplog) == [], [r.getMessage() for r in _logged(caplog)]
     assert sum("policy_retention" in s for s in statements) == 1, statements
+
+
+def test_retention_policy_on_request_metrics_1m_logs_nothing(pg_engine, create_pg_app, caplog):
+    """The migration chain keeps 30 days of request_metrics_1m (#169); that is not request_logs."""
+    with pg_engine.connect() as conn:
+        assert conn.execute(text(
+            "SELECT COUNT(*) FROM timescaledb_information.jobs "
+            "WHERE proc_name = 'policy_retention' AND hypertable_name = 'request_metrics_1m'"
+        )).scalar() == 1, "the policy must exist or this test proves nothing"
+
+    with caplog.at_level(logging.WARNING):
+        create_pg_app()
+
+    assert _logged(caplog) == [], [r.getMessage() for r in _logged(caplog)]
 
 
 def test_aborted_lookup_transaction_is_rolled_back(pg_engine, create_pg_app, monkeypatch, caplog):
