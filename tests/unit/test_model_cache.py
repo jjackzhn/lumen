@@ -92,7 +92,10 @@ def test_snapshot_holds_plain_values(app, test_model, test_model_endpoint):
 def test_snapshot_fields_are_columns(snapshot_cls, model):
     """A renamed or dropped column fails here, not only in a refresh log line."""
     columns = set(model.__table__.columns.keys())
-    assert {f.name for f in dataclasses.fields(snapshot_cls)} <= columns
+    fields = {f.name for f in dataclasses.fields(snapshot_cls)}
+    if snapshot_cls is model_cache.ModelSnapshot:
+        fields.discard("aliases")  # the alias names, from the aliases relationship
+    assert fields <= columns
 
 
 def test_load_leaves_the_callers_session_alone(app, test_model):
