@@ -22,6 +22,7 @@ See [Profile → API Keys](../guides/profile.md#api-keys) to create a key.
 | `GET` | `/v1/models/<id>` | Retrieve details for a single model |
 | `POST` | `/v1/models/<id>/acknowledge` | Acknowledge a model that requires consent |
 | `GET` | `/v1/usage` | Get cumulative usage for the bearer API key |
+| `GET` | `/v1/balance` | Get the account's coin balance and coins spent |
 | `POST` | `/v1/chat/completions` | Send a chat message and receive a reply |
 | `POST` | `/v1/completions` | Legacy text-completion endpoint (prefer `/v1/chat/completions`) |
 | `POST` | `/v1/audio/transcriptions` | Transcribe audio to text (speech-to-text) |
@@ -58,6 +59,37 @@ of the account that owns the key, so it is shared with that account's other keys
 `-2` means the account has an unlimited coin pool and `null` that the account has no coin pool
 (none configured for it, its groups or the global default) or a blocked one (Max Coins `0`). This endpoint does not add to the request count. It does not include
 usage from other keys, browser chat, or earlier periods before the key was created.
+
+---
+
+## Coin Balance
+
+```bash
+curl https://lumen.example.com/v1/balance \
+  -H "Authorization: Bearer sk_your_api_key_here"
+```
+
+Returns the coins of the **account** that owns the key in the Authorization header — every key it
+holds, its browser chat and its proxied requests — where `/v1/usage` reports the one key:
+
+```json
+{
+  "coins_available": 83.25,
+  "coins_spent": 16.75,
+  "coins_limit": 100,
+  "next_refill": "2026-09-28T15:00:00Z",
+  "requests": 12,
+  "tokens_used": 3000,
+  "last_used_at": "2026-09-28T14:00:00Z"
+}
+```
+
+`coins_available` follows the same rules as in `/v1/usage`: `-2` for an unlimited pool, `null` for
+an account with no pool or a blocked one. `coins_limit` is the pool's Max Coins (`-2` when
+unlimited, `null` without a pool), `next_refill` the UTC time the next refill is due (`null` when
+the pool does not refill), and `coins_spent`, `requests`, `tokens_used` and `last_used_at` are the
+account's running totals across all models and sources. Like `/v1/usage`, this endpoint does not
+add to the request count.
 
 ---
 

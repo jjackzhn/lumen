@@ -29,6 +29,7 @@ All notable changes to Lumen will be documented in this file.
 - Add a standalone monitoring service in `scripts/monitor` that tracks Lumen health, uptime and response time, and records daily models.dev, Lumen and hardware/energy costs plus requests and tokens, with a status dashboard and per-model graphs.
 - Publish the monitor image as `ncsa/lumen-monitor` and `ghcr.io/ncsa/lumen-monitor`, versioned with Lumen; lint and Docker CI run as a matrix over Lumen and the monitor.
 - API keys can expire: users choose or change a key's TTL, capped by and defaulting to api.keys.ttl (admin API settings; 0 = never); expired keys are revoked (#71)
+- `GET /v1/balance` reports the account's coin balance and its total coins spent, requests, tokens and last use, where `GET /v1/usage` reports the single key.
 
 ### Changed
 

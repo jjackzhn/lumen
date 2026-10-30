@@ -129,6 +129,7 @@ def test_user_key_with_tokens_matches_the_plain_response(client, user_key, seede
 
 @pytest.mark.parametrize("method,path", [
     ("get", "/v1/usage?tokens=true"),
+    ("get", "/v1/balance"),
     ("post", "/v1/chat/completions?tokens=true"),
     ("post", "/v1/models/test-model/acknowledge?tokens=true"),
 ])

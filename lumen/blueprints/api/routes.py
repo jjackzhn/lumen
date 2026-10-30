@@ -2,6 +2,7 @@ import hmac
 import json
 import logging
 import time as _time
+from datetime import timedelta
 from functools import wraps
 from http import HTTPStatus
 from urllib.parse import quote
@@ -18,6 +19,7 @@ from lumen.models.api_key import APIKey
 from lumen.models.entity import Entity
 from lumen.models.entity_balance import EntityBalance
 from lumen.models.entity_model_consent import EntityModelConsent
+from lumen.models.entity_stat import EntityStat
 from lumen.services import model_cache, request_rates
 from lumen.services.cost import calculate_audio_cost, calculate_cost
 from lumen.services.crypto import cache_salt_for_entity, hash_api_key
@@ -326,20 +328,26 @@ def api_key_required(f):
     return decorated
 
 
+def _coins_available(pool, balance):
+    """Spendable coins for a coin pool: None without a pool, -2 when unlimited.
+
+    ``balance`` is the entity's EntityBalance row, or None before its first
+    request, when the pool's starting coins still apply.
+    """
+    if pool is None:
+        return None
+    if pool.max_coins == -2:
+        return -2
+    return float(balance.coins_left) if balance else float(pool.starting_coins)
+
+
 @api_bp.route("/usage", methods=["GET"])
 @api_key_required
 def get_usage():
     key = g.api_key
-    pool = get_pool_limit(g.entity.id)
-    if pool is None:
-        coins_available = None
-    elif pool.max_coins == -2:
-        coins_available = -2
-    else:
-        balance = db.session.execute(
-            select(EntityBalance).filter_by(entity_id=g.entity.id)
-        ).scalar_one_or_none()
-        coins_available = float(balance.coins_left) if balance else float(pool[2])
+    balance = db.session.execute(
+        select(EntityBalance).filter_by(entity_id=g.entity.id)
+    ).scalar_one_or_none()
     return jsonify({
         "requests": key.requests,
         "input_tokens": key.input_tokens,
@@ -347,8 +355,38 @@ def get_usage():
         "total_tokens": key.input_tokens + key.output_tokens,
         "audio_seconds": key.audio_seconds,
         "cost": float(key.cost),
-        "coins_available": coins_available,
+        "coins_available": _coins_available(get_pool_limit(g.entity.id), balance),
         "last_used_at": key.last_used_at.isoformat() + "Z" if key.last_used_at else None,
+    })
+
+
+@api_bp.route("/balance", methods=["GET"])
+@api_key_required
+def get_balance():
+    """Coin balance and coins spent for the account that owns this API key.
+
+    /v1/usage counts one key; these numbers cover the whole account — all of its
+    keys, its browser chat and its proxied requests.
+    """
+    entity_id = g.entity.id
+    pool = get_pool_limit(entity_id)
+    balance = db.session.execute(
+        select(EntityBalance).filter_by(entity_id=entity_id)
+    ).scalar_one_or_none()
+    stat = db.session.execute(
+        select(EntityStat).filter_by(entity_id=entity_id)
+    ).scalar_one_or_none()
+    next_refill = None
+    if pool is not None and pool.refresh_coins > 0 and balance is not None and balance.last_refill_at:
+        next_refill = (balance.last_refill_at + timedelta(hours=1)).isoformat() + "Z"
+    return jsonify({
+        "coins_available": _coins_available(pool, balance),
+        "coins_spent": float(stat.cost) if stat else 0.0,
+        "coins_limit": float(pool.max_coins) if pool is not None else None,
+        "next_refill": next_refill,
+        "requests": stat.requests if stat else 0,
+        "tokens_used": (stat.input_tokens + stat.output_tokens) if stat else 0,
+        "last_used_at": stat.last_used_at.isoformat() + "Z" if stat is not None and stat.last_used_at else None,
     })
 
 

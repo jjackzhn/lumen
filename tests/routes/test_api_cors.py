@@ -30,7 +30,7 @@ OPENAI_JS_SDK_HEADERS = {
     "x-stainless-runtime", "x-stainless-runtime-version", "x-stainless-retry-count",
     "x-stainless-timeout", "x-stainless-helper-method",
 }
-V1_PATHS = ["/v1/models", "/v1/usage", "/v1/chat/completions", "/v1/audio/transcriptions"]
+V1_PATHS = ["/v1/models", "/v1/usage", "/v1/balance", "/v1/chat/completions", "/v1/audio/transcriptions"]
 
 
 @pytest.fixture
