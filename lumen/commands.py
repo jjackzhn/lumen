@@ -206,6 +206,7 @@ def _apply_model_fields(config, model_def):
     config.context_window = model_def.get("context_window") or None
     config.max_output_tokens = model_def.get("max_output_tokens") or None
     config.supports_reasoning = model_def.get("supports_reasoning")
+    config.todo_conditioning = bool(model_def.get("todo_conditioning", False))
     config.knowledge_cutoff = _normalize_knowledge_cutoff(model_def.get("knowledge_cutoff"), model_def.get("name"))
     config.notice = model_def.get("notice") or None
     config.ack_message = model_def.get("ack_message") or None
@@ -833,6 +834,70 @@ def _check_stats(fix):
         db.session.rollback()
         click.echo(f"{len(drift)} row(s) differ from request_logs. Run 'flask check-stats --fix' to repair them.")
         raise SystemExit(1)
+
+
+@click.command("todo-census")
+@click.option("--days", type=click.IntRange(min=1), default=7, show_default=True,
+              help="How many days back to report.")
+@with_appcontext
+def todo_census_cmd(days):
+    """Report how often models leave a client task list unfinished.
+
+    Reads the per-request census billing records (``request_logs.todo_census``)
+    and prints one row per model: requests that carried a ``todo_write`` task
+    list, responses that updated it, responses whose list ended fully
+    ``completed``, and the "stuck" count. Stuck means the response ended its
+    turn normally (finish reason ``stop``/``end_turn``) with items still open —
+    the case a user sees as a progress panel that never finishes. A response cut
+    short by the token limit, or one that ended on another tool call, is counted
+    as open but not stuck, because it did not choose to stop there.
+
+    Use it to compare models, and to check a ``todo_conditioning`` rollout
+    against the same window before it was enabled.
+    """
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = db.session.execute(
+        select(RequestLog.model_config_id, RequestLog.todo_census)
+        .where(RequestLog.time >= since, RequestLog.todo_census.isnot(None))
+    ).all()
+    if not rows:
+        click.echo(f"No task-list requests in the last {days} day(s).")
+        return
+
+    names = dict(db.session.execute(select(ModelConfig.id, ModelConfig.model_name)).all())
+    tally = {}
+    for model_config_id, census in rows:
+        if not isinstance(census, dict):
+            # A row written with a JSON null rather than SQL NULL (an older pod
+            # during a rolling update) carries no census to report.
+            continue
+        counts = tally.setdefault(model_config_id, {"requests": 0, "called": 0, "completed": 0, "open": 0, "stuck": 0})
+        counts["requests"] += 1
+        if census.get("called"):
+            counts["called"] += 1
+        if census.get("all_completed"):
+            counts["completed"] += 1
+        else:
+            counts["open"] += 1
+            # A request that ended on a tool call is mid-work by design, and one
+            # the token limit cut off never got the chance to finish the list.
+            if census.get("finish_reason") in (None, "stop", "end_turn"):
+                counts["stuck"] += 1
+
+    if not tally:
+        click.echo(f"No task-list requests in the last {days} day(s).")
+        return
+
+    width = max(len(names.get(mc_id, f"#{mc_id}")) for mc_id in tally)
+    click.echo(f"Task-list requests in the last {days} day(s), by model:")
+    click.echo(f"  {'model'.ljust(width)}  {'requests':>8}  {'updated':>8}  {'completed':>9}  {'open':>5}  {'stuck':>5}")
+    for model_config_id, counts in sorted(tally.items(), key=lambda kv: (-kv[1]["stuck"], kv[0])):
+        name = names.get(model_config_id, f"#{model_config_id}")
+        share = counts["stuck"] / counts["requests"]
+        click.echo(
+            f"  {name.ljust(width)}  {counts['requests']:>8}  {counts['called']:>8}  "
+            f"{counts['completed']:>9}  {counts['open']:>5}  {counts['stuck']:>5}  ({share:.0%})"
+        )
 
 
 @click.command("erase-entity")

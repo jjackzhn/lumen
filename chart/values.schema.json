@@ -353,6 +353,7 @@
           "output_cost_per_million": { "type": "number", "minimum": 0 },
           "auto_price": { "type": "boolean" },
           "auto_cache_price": { "type": "boolean" },
+          "todo_conditioning": { "type": "boolean", "description": "Append a todo_write completion reminder to the system prompt and tool description of requests carrying that tool. Off by default; enable per model to measure the effect." },
           "endpoints": {
             "type": "array",
             "minItems": 1,

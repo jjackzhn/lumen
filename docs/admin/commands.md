@@ -11,6 +11,7 @@ for short. `flask --app run <command> --help` prints the same usage and options 
 | [`backfill-aggregate`](#backfill-aggregate) | Materialises a continuous aggregate's full history, month by month. |
 | [`check-aggregate`](#check-aggregate) | Reports whether the usage aggregates cover `request_logs` and agree. Read-only. |
 | [`check-stats`](#check-stats) | Compares the folded usage totals with `request_logs`; `--fix` repairs them. |
+| [`todo-census`](#todo-census) | Reports how often models leave a client task list unfinished. Read-only. |
 | [`init-db`](#init-db) | Syncs the models in `config.yaml` to the database. |
 | [`reassign-model`](#reassign-model) | Moves conversations, stats and request history from one model to another. |
 | [`erase-entity`](#erase-entity) | Hard-deletes a user for GDPR erasure. |
@@ -283,6 +284,37 @@ cron on the host:
 
 A scheduled run that overlaps a `reassign-model` or `erase-entity` skips and exits 0; the next run
 checks.
+
+## `todo-census`
+
+Reports how often models leave a client task list unfinished. Only requests that carried a
+`todo_write` tool are counted; everything else is ignored.
+
+```bash
+flask todo-census [--days N]
+```
+
+| Flag | Meaning |
+|---|---|
+| `--days` | How many days back to report. Default `7`. |
+
+One row per model:
+
+| Column | Meaning |
+|---|---|
+| `requests` | Responses whose request carried a `todo_write` task list. |
+| `updated` | Responses that called `todo_write` themselves. |
+| `completed` | Responses that left every item `completed`. |
+| `open` | Responses that left at least one item pending or in progress. |
+| `stuck` | The responses in `open` that ended their turn normally, printed with their share of `requests` as `(NN%)`. |
+
+`stuck` counts the responses in `open` that ended their turn normally (`stop` / `end_turn`): the
+case a user sees as a progress panel that never finishes. A response the token limit cut off, or one
+that ended on another tool call, is `open` but not `stuck`, because it did not choose to stop there.
+
+The numbers come from `request_logs.todo_census`, written per request by billing, so nothing has to
+be enabled for them to appear. Compare models over the same window, and compare a window before and
+after enabling [`todo_conditioning`](../admin/config-models.md) on a model.
 
 ## `init-db`
 

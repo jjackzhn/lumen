@@ -131,6 +131,7 @@ These fields tell the UI what the model can do and help users pick the right one
 | `input_modalities` | What the model accepts: `["text"]`, `["text", "image"]`, `["text", "image", "video"]`, `["text", "image", "video", "audio"]` |
 | `output_modalities` | What the model produces: typically `["text"]` |
 | `notice` | Optional admin note shown to users on the model detail page |
+| `todo_conditioning` | When `true`, Lumen appends a completion reminder to the system prompt and to the `todo_write` tool description of any request carrying that tool, so the model is asked to finish with every item marked `completed`. Off by default; the tool itself is never added, removed or renamed, and requests without it are untouched. Measure the effect with [`flask todo-census`](commands.md#todo-census) |
 
 On Update, `supports_reasoning` comes from the serving backend's reasoning parser when its `/server_info` is reachable (SGLang always; vLLM only in dev mode), and otherwise from the models.dev provider consensus.
 

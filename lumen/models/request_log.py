@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Mapped, mapped_column
@@ -180,6 +180,19 @@ class RequestLog(db.Model):
         db.Float,
         nullable=True,
         comment="Seconds blocked handing response chunks to the server. A large share means a slow client, not a slow backend - duration conflates the two. 0 on non-streaming paths, where billing completes before the body is handed over and the value is unknowable",
+    )
+    # Snapshot of the client's `todo_write` task list for this request, when it
+    # carried one. A model that creates a task list and never updates it leaves
+    # the user-facing panel stuck, so the aggregated counts here are how that
+    # behavior is measured per model. NULL means the request had no task list,
+    # or ended before its response was observed — neither is a claim that the
+    # model made no progress.
+    todo_census: Mapped[Optional[Any]] = mapped_column(
+        # none_as_null: "no task list" must be SQL NULL, not a JSON `null`
+        # literal, so a census query can filter on it and the two never diverge.
+        db.JSON(none_as_null=True),
+        nullable=True,
+        comment="Task-list snapshot for this request: counts from the latest todo_write in history plus whether this response called it; NULL when the request carried no task list or its response was not observed",
     )
     # Only values the code can actually write. `billing_error` and
     # `upstream_error` are deliberately absent: the row is created inside

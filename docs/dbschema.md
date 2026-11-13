@@ -459,6 +459,7 @@ Configuration and metadata for each AI model that Lumen can proxy. One row per l
 | `context_window` | Integer | YES | Total context window in tokens (input + output) |
 | `max_output_tokens` | Integer | YES | Maximum tokens the model can generate in a single response |
 | `supports_reasoning` | Boolean | YES | Whether the model exposes chain-of-thought / reasoning tokens |
+| `todo_conditioning` | Boolean | NO | Append a `todo_write` completion reminder to the system prompt and tool description of requests carrying that tool, so a model does not leave a client task list open. Off by default (`false`) so the effect can be measured before a model is switched over. See [`request_logs.todo_census`](#request_logs) for the measurement. |
 | `knowledge_cutoff` | String(7) | YES | Training data cutoff in `YYYY-MM` format |
 | `notice` | Text | YES | Optional admin notice displayed to users on the model detail page |
 | `created_at` | DateTime | NO | UTC timestamp when the model was registered |
@@ -774,6 +775,7 @@ Append-only log of every proxied request. On PostgreSQL this table is converted 
 | `send_blocked` | Float | YES | Seconds blocked handing response chunks to the server |
 | `outcome` | String(16) | YES | How the request ended: `'ok'` or `'disconnect'` |
 | `stats_deferred` | Boolean | YES | TRUE when billing left this request out of `model_stats` / `entity_stats` for the stats fold to add; NULL when billing counted it directly (before the stats cutover, on an older pod during a rolling update, or with a stale cached cutover). The fold, `flask check-stats` and the `/profile` live tail read only TRUE rows, so every request is counted exactly once |
+| `todo_census` | JSON | YES | Task-list snapshot for a request that carried a client-side `todo_write` tool: `items`, `completed`, `in_progress`, `pending` from the newest list the response left behind, `called` (whether this response called the tool), `all_completed`, and the upstream `finish_reason`. NULL means the request had no task list, or its response was never observed (an aborted stream) — neither is a claim that the model made no progress. Rows are not backfilled. |
 
 **Constraints:** index `request_logs_time_idx` on (`time` DESC); index `ix_request_logs_entity_id` on (`entity_id`); index `ix_request_logs_model_config_id_time` on (`model_config_id`, `time` DESC)
 

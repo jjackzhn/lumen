@@ -155,6 +155,9 @@ models:
     # auto_cache_price: true          # optional; also let the model update action set cache prices from models.dev (independent of auto_price; default: manual)
     # max_input_tokens: 128000        # optional; context window size
     # supports_function_calling: true # optional; tool/function call support
+    # todo_conditioning: false        # optional; append a todo_write completion reminder to the system
+    #                                 # prompt and tool description when a request carries that tool
+    #                                 # (off by default; enable per model to measure the effect)
     # supports_vision: true           # optional; image input support (used by upload UI)
     endpoints:
       - url: https://api.openai.com/v1

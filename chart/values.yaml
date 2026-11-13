@@ -396,6 +396,8 @@ models: []
 #   max_output_tokens: 16384
 #   knowledge_cutoff: "2023-10"
 #   supports_reasoning: false
+#   todo_conditioning: false          # append a todo_write completion reminder to the system prompt and tool
+#                                     # description when the request carries that tool; off by default
 #   input_modalities: ["text", "image"]
 #   output_modalities: ["text"]
 #   needs_ack: false                  # require a one-time user acknowledgement

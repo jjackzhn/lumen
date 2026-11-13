@@ -63,6 +63,11 @@ class ModelConfig(db.Model):
     context_window: Mapped[Optional[int]] = mapped_column(db.Integer, comment="Total context window in tokens (input + output)")
     max_output_tokens: Mapped[Optional[int]] = mapped_column(db.Integer, comment="Maximum tokens the model can generate per response")
     supports_reasoning: Mapped[Optional[bool]] = mapped_column(db.Boolean, comment="Whether the model exposes chain-of-thought reasoning tokens")
+    # Gateway conditioning gate: when true, the proxy appends a todo_write
+    # completion reminder to the system prompt and tool description of
+    # requests carrying the `todo_write` tool. Off by default so the effect on
+    # model behavior can be A/B measured before being enabled per model.
+    todo_conditioning: Mapped[bool] = mapped_column(db.Boolean, nullable=False, default=False, server_default=db.false(), comment="Append the todo_write completion reminder to the system prompt and tool description; off by default")
     # Training data cutoff in YYYY-MM format
     knowledge_cutoff: Mapped[Optional[str]] = mapped_column(db.String(7), comment="Training data cutoff in YYYY-MM format")
     # Optional admin notice displayed to users on the model detail page

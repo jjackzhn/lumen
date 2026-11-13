@@ -18,7 +18,7 @@ from lumen.models.api_key import APIKey
 from lumen.models.entity import Entity
 from lumen.models.entity_balance import EntityBalance
 from lumen.models.entity_model_consent import EntityModelConsent
-from lumen.services import model_cache, request_rates
+from lumen.services import model_cache, request_rates, todo_census, todo_conditioning
 from lumen.services.cost import calculate_audio_cost, calculate_cost, usage_tokens
 from lumen.services.crypto import cache_salt_for_entity, hash_api_key
 from lumen.services.key_expiry import revoke_if_expired
@@ -614,6 +614,11 @@ def _complete_and_bill(model_name: str, messages: list, **kwargs):
     if err:
         return None, err
 
+    # Applied only for models that opted in, and only to a request that carries
+    # the task-list tool: see services/todo_conditioning.
+    if model_config.todo_conditioning and kwargs.get("tools"):
+        messages, kwargs["tools"] = todo_conditioning.condition(messages, kwargs["tools"])
+
     entity_id = g.entity.id
     ak_id = g.api_key.id
     # Forward the endpoint's override name, else the CANONICAL model name — never
@@ -678,12 +683,58 @@ def _complete_and_bill(model_name: str, messages: list, **kwargs):
                      timing=timing, upstream_t0=t0,
                      # Non-streaming: the whole body arrives in one piece, so the
                      # first chunk is the response and both marks are the duration.
-                     ttft=duration, ttft_visible=duration, outcome="ok")
+                     ttft=duration, ttft_visible=duration, outcome="ok",
+                     todo_census=todo_census.census(
+                         messages, _response_tool_calls(response), _finish_reason(response)))
         # Report the requested name (which may be an alias), not the backend's.
         response.model = model_name
         return response, None
     finally:
         live_state.release(ticket)
+
+
+def _response_tool_calls(response):
+    """Flatten a non-streaming response's tool calls to ``{name, arguments}`` dicts.
+
+    The census reads one shape for both transports, so a call assembled from
+    stream deltas and one delivered whole are indistinguishable to it.
+    """
+    calls = []
+    for choice in getattr(response, "choices", None) or ():
+        message = getattr(choice, "message", None)
+        for call in getattr(message, "tool_calls", None) or ():
+            function = getattr(call, "function", None)
+            calls.append({
+                "name": getattr(function, "name", None),
+                "arguments": getattr(function, "arguments", None),
+            })
+    return calls
+
+
+def _finish_reason(response):
+    """The response's first finish reason, or None for a response without choices."""
+    choices = getattr(response, "choices", None) or ()
+    return getattr(choices[0], "finish_reason", None) if choices else None
+
+
+def _accumulate_tool_call(slots, call):
+    """Merge one streamed tool-call delta into the call being assembled.
+
+    OpenAI-compatible streams deliver a call in pieces: the first delta carries
+    the name, later ones append argument fragments. ``slots`` is keyed by the
+    delta's index, which is how a response with several calls keeps them apart.
+    """
+    index = getattr(call, "index", 0)
+    slot = slots.setdefault(index if isinstance(index, int) else 0, {"name": None, "arguments": ""})
+    function = getattr(call, "function", None)
+    if function is None:
+        return
+    name = getattr(function, "name", None)
+    if name:
+        slot["name"] = name
+    arguments = getattr(function, "arguments", None)
+    if arguments:
+        slot["arguments"] += arguments
 
 
 def _merge_leading_system_messages(messages):
@@ -714,6 +765,10 @@ def _do_chat(model_name: str, messages: list, stream: bool, **kwargs):
     model_config, endpoint, effective, err = _preflight(model_name)
     if err:
         return err
+
+    # Same gate as the non-streaming path above.
+    if model_config.todo_conditioning and kwargs.get("tools"):
+        messages, kwargs["tools"] = todo_conditioning.condition(messages, kwargs["tools"])
 
     entity_id = g.entity.id
     ak_id = g.api_key.id
@@ -766,6 +821,10 @@ def _do_chat(model_name: str, messages: list, stream: bool, **kwargs):
         phase = "upstream"
         usage = None
         content_deltas = 0
+        # Assembled from deltas for the todo census: the finish reason and any
+        # tool calls this response made (empty for a response with no tools).
+        streamed_calls = {}
+        finish_reason = None
         t0 = _time.monotonic()
         # First chunk of any kind (reasoning included) and first visible content
         # delta: on a reasoning model they differ by the whole thinking phase.
@@ -833,6 +892,10 @@ def _do_chat(model_name: str, messages: list, stream: bool, **kwargs):
                     # chunk, one content delta is the stand-in for one token.
                     choices = getattr(chunk, "choices", None)
                     delta = getattr(choices[0], "delta", None) if choices else None
+                    if choices and getattr(choices[0], "finish_reason", None):
+                        finish_reason = choices[0].finish_reason
+                    for call in getattr(delta, "tool_calls", None) or ():
+                        _accumulate_tool_call(streamed_calls, call)
                     if getattr(delta, "content", None):
                         content_deltas += 1
                         if t_first_visible is None:
@@ -861,7 +924,9 @@ def _do_chat(model_name: str, messages: list, stream: bool, **kwargs):
                                          endpoint_id=ep_id, duration=duration,
                                          timing=timing, upstream_t0=t0,
                                          ttft=t_first_any, ttft_visible=t_first_visible,
-                                         outcome="ok")
+                                         outcome="ok",
+                                         todo_census=todo_census.census(
+                                             messages, list(streamed_calls.values()), finish_reason))
                         billed = True
                     else:
                         logger.warning(

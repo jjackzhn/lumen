@@ -88,6 +88,7 @@ class ModelSnapshot:
     max_output_tokens: Optional[int] = None
     supports_function_calling: Optional[bool] = None
     supports_reasoning: Optional[bool] = None
+    todo_conditioning: Optional[bool] = None
     knowledge_cutoff: Optional[str] = None
     input_modalities: Any = None
     output_modalities: Any = None
@@ -176,6 +177,7 @@ def _load() -> _Snapshot:
             max_output_tokens=r.max_output_tokens,
             supports_function_calling=r.supports_function_calling,
             supports_reasoning=r.supports_reasoning,
+            todo_conditioning=r.todo_conditioning,
             knowledge_cutoff=r.knowledge_cutoff,
             input_modalities=_tuple(r.input_modalities),
             output_modalities=_tuple(r.output_modalities),
@@ -193,7 +195,8 @@ def _load() -> _Snapshot:
                 ModelConfig.disabled, ModelConfig.end_date,
                 ModelConfig.created_at, ModelConfig.context_window, ModelConfig.description,
                 ModelConfig.max_output_tokens, ModelConfig.supports_function_calling,
-                ModelConfig.supports_reasoning, ModelConfig.knowledge_cutoff,
+                ModelConfig.supports_reasoning, ModelConfig.todo_conditioning,
+                ModelConfig.knowledge_cutoff,
                 ModelConfig.input_modalities, ModelConfig.output_modalities,
                 ModelConfig.ack_message,
             ).where(ModelConfig.active).order_by(ModelConfig.id)

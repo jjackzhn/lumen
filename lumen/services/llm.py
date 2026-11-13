@@ -869,6 +869,7 @@ def update_stats(
     ttft_visible: float = None,
     outcome: str = None,
     api_key_id: int = None,
+    todo_census: dict = None,
 ):
     """Append a RequestLog row, then update or create the ModelStat/EntityStat running totals.
 
@@ -912,6 +913,11 @@ def update_stats(
     ``api_key_id`` is the API key that made the request, stored on the row in
     ``request_logs.api_key_id``. It is None (SQL NULL) for chat, which uses no
     key; on the same INSERT, so it adds no statement either.
+
+    ``todo_census`` is the task-list snapshot for a request that carried one
+    (see services/todo_census). None is stored as SQL NULL: the request had no
+    task list, or ended before its response was observed — neither is a claim
+    that the model made no progress.
     """
     # Decided before the row is built, so the row records the decision.
     logged_at = datetime.now(timezone.utc)
@@ -941,6 +947,7 @@ def update_stats(
         send_blocked=timing.blocked_seconds(),
         outcome=outcome,
         api_key_id=api_key_id,
+        todo_census=todo_census,
         stats_deferred=True if deferred else None,
     )
     db.session.add(log)
