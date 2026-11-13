@@ -693,6 +693,7 @@ def create_app():
         erase_entity_cmd,
         init_db_cmd,
         reassign_model_cmd,
+        todo_census_cmd,
         upgrade_cmd,
         wait_for_migrations_cmd,
     )
@@ -704,6 +705,7 @@ def create_app():
     app.cli.add_command(wait_for_migrations_cmd)
     app.cli.add_command(upgrade_cmd)
     app.cli.add_command(check_stats_cmd)
+    app.cli.add_command(todo_census_cmd)
 
     # Context processor: inject app_name and nav_projects into all templates
     @app.context_processor

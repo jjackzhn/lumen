@@ -53,6 +53,14 @@ def _run(app, *args):
     return app.test_cli_runner().invoke(todo_census_cmd, list(args))
 
 
+def test_the_command_is_registered_on_the_app(app):
+    # The other tests invoke the command object directly, which would keep
+    # passing if create_app() forgot to register it on the CLI group.
+    result = app.test_cli_runner().invoke(args=["todo-census", "--days", "1"])
+    assert result.exit_code == 0, result.output
+    assert "No such command" not in result.output
+
+
 def test_reports_each_model_with_its_stuck_share(app, model_id):
     _log(app, model_id, _census(2))
     _log(app, model_id, _census(1))
